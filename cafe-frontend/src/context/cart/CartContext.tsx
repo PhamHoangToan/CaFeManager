@@ -7,8 +7,9 @@ import {
   ReactNode,
   useEffect,
   useMemo,
+  useCallback,
 } from "react";
-import { CartItem } from "@/components/Cart/types"; // ✅ Dùng cùng type với backend/API
+import { CartItem } from "@/components/Cart/types";
 
 type CartContextType = {
   cart: CartItem[];
@@ -26,10 +27,19 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 export function CartProvider({ children }: { children: ReactNode }) {
   const [cart, setCart] = useState<CartItem[]>([]);
 
-  // 🧩 Đồng bộ context từ trang CartPage
-  const setCartFromPage = (updatedItems: CartItem[]) => {
-    setCart(updatedItems);
-  };
+  // 🧩 Đồng bộ context từ trang CartPage (được gọi ngoài render, an toàn)
+  const setCartFromPage = useCallback((updatedItems: CartItem[]) => {
+    if (!Array.isArray(updatedItems)) return;
+    setCart((prev) => {
+      // tránh setState trùng lặp nếu dữ liệu giống hệt
+      const same =
+        JSON.stringify(prev.map((i) => ({ id: i.id, qty: i.quantity }))) ===
+        JSON.stringify(updatedItems.map((i) => ({ id: i.id, qty: i.quantity })));
+      if (same) return prev;
+      console.log("🧠 [CartContext] Cập nhật từ trang CartPage:", updatedItems);
+      return updatedItems;
+    });
+  }, []);
 
   // 💾 Khởi tạo giỏ hàng từ localStorage (guest)
   useEffect(() => {
@@ -57,7 +67,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [cart]);
 
   // ➕ Thêm sản phẩm vào giỏ
-  const addToCart = (item: CartItem) => {
+  const addToCart = useCallback((item: CartItem) => {
     setCart((prev) => {
       const existing = prev.find(
         (p) => p.product.id === item.product.id && p.size?.id === item.size?.id
@@ -75,49 +85,50 @@ export function CartProvider({ children }: { children: ReactNode }) {
         return [...prev, item];
       }
     });
-  };
+  }, []);
 
   // 🔁 Cập nhật số lượng
-  const updateQuantity = (
-    id: number,
-    sizeId: number | null | undefined,
-    qty: number
-  ) => {
-    if (qty <= 0) {
-      removeFromCart(id, sizeId);
-      return;
-    }
-    setCart((prev) =>
-      prev.map((p) =>
-        p.product.id === id && p.size?.id === sizeId
-          ? { ...p, quantity: qty }
-          : p
-      )
-    );
-  };
+  const updateQuantity = useCallback(
+    (id: number, sizeId: number | null | undefined, qty: number) => {
+      if (qty <= 0) {
+        removeFromCart(id, sizeId);
+        return;
+      }
+      setCart((prev) =>
+        prev.map((p) =>
+          p.product.id === id && p.size?.id === sizeId
+            ? { ...p, quantity: qty }
+            : p
+        )
+      );
+    },
+    []
+  );
 
   // ❌ Xóa sản phẩm
-  const removeFromCart = (id: number, sizeId?: number | null) => {
+  const removeFromCart = useCallback((id: number, sizeId?: number | null) => {
     setCart((prev) =>
-      prev.filter(
-        (p) => !(p.product.id === id && p.size?.id === sizeId)
-      )
+      prev.filter((p) => !(p.product.id === id && p.size?.id === sizeId))
     );
     console.log("🗑️ [Cart] Đã xóa sản phẩm:", { id, sizeId });
-  };
+  }, []);
 
   // 🧹 Xóa toàn bộ giỏ
-  const clearCart = () => {
+  const clearCart = useCallback(() => {
+    console.group("🧹 [CartContext.clearCart]");
+    console.log("Trước khi clear:", cart);
     setCart([]);
-    localStorage.removeItem("guestCart");
-    console.log("🧹 [Cart] Đã xóa toàn bộ giỏ hàng");
-  };
+  localStorage.removeItem("cartId");
+  localStorage.removeItem("guestCart"); 
+    console.log("Đã gọi setCart([]) và xoá guestCart khỏi localStorage");
+    console.groupEnd();
+  }, [cart]);
 
   // 🔄 Cập nhật giỏ hàng từ server (khi đăng nhập)
-  const setCartFromServer = (serverItems: CartItem[]) => {
+  const setCartFromServer = useCallback((serverItems: CartItem[]) => {
     setCart(serverItems || []);
     console.log("🔄 [Cart] Đồng bộ từ server:", serverItems);
-  };
+  }, []);
 
   // 🧮 Tổng số lượng item
   const totalItems = useMemo(
@@ -145,7 +156,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
 export const useCart = () => {
   const ctx = useContext(CartContext);
-  if (!ctx)
-    throw new Error("useCart must be used inside <CartProvider>");
+  if (!ctx) throw new Error("useCart must be used inside <CartProvider>");
   return ctx;
 };

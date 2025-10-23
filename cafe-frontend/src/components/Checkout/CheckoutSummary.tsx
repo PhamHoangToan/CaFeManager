@@ -1,4 +1,5 @@
 "use client";
+
 import { Cart } from "./types";
 import { useRouter } from "next/navigation";
 import { API_URL } from "@/lib/api";
@@ -7,18 +8,18 @@ import { useCart } from "@/context/cart/CartContext";
 
 interface CheckoutSummaryProps {
   cart: Cart;
-  shippingFee?: number | null; // 🆕 thêm phí giao hàng
+  shippingFee?: number | null;
 }
 
 export default function CheckoutSummary({ cart, shippingFee }: CheckoutSummaryProps) {
   const router = useRouter();
-  const { clearCart } = useCart();
+  const { clearCart, cart: contextCart, totalItems } = useCart(); // ✅ lấy context để log
   const [placing, setPlacing] = useState(false);
   const [voucherCode, setVoucherCode] = useState("");
   const [discount, setDiscount] = useState(0);
   const [appliedVoucher, setAppliedVoucher] = useState<string | null>(null);
 
-  // ✅ Đồng bộ lại giỏ hàng từ localStorage nếu user là guest
+  // ✅ Giỏ hàng local nếu user là guest
   const [localCart, setLocalCart] = useState<Cart | null>(cart);
 
   useEffect(() => {
@@ -29,7 +30,11 @@ export default function CheckoutSummary({ cart, shippingFee }: CheckoutSummaryPr
         if (guestCart?.items?.length) {
           console.log("📦 [CheckoutSummary] Load guestCart từ localStorage:", guestCart);
           setLocalCart(guestCart);
+        } else {
+          console.log("⚪ [CheckoutSummary] Không tìm thấy guestCart hợp lệ trong localStorage.");
         }
+      } else {
+        console.log("👤 [CheckoutSummary] Người dùng đã đăng nhập, dùng cart từ server/context.");
       }
     } catch (err) {
       console.error("❌ [CheckoutSummary] Lỗi khi đọc guestCart:", err);
@@ -37,11 +42,8 @@ export default function CheckoutSummary({ cart, shippingFee }: CheckoutSummaryPr
   }, [cart]);
 
   const activeCart = localCart || cart;
-
   const subtotal =
     activeCart?.items.reduce((sum, i) => sum + Number(i.price) * i.quantity, 0) || 0;
-
-  // 🧮 Tổng cộng = Tạm tính - Giảm giá + Phí giao hàng
   const total = Math.max(subtotal - discount + (shippingFee || 0), 0);
 
   // 🧾 Áp dụng mã giảm giá
@@ -49,11 +51,14 @@ export default function CheckoutSummary({ cart, shippingFee }: CheckoutSummaryPr
     if (!voucherCode.trim()) return alert("Vui lòng nhập mã giảm giá!");
 
     try {
+      console.log("🎟️ [Voucher] Gửi mã:", voucherCode);
       const res = await fetch(`${API_URL}/vouchers/apply/${activeCart.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: voucherCode }),
       });
+
+      console.log("📩 [Voucher] Kết quả HTTP:", res.status);
 
       if (!res.ok) {
         const err = await res.text();
@@ -61,47 +66,46 @@ export default function CheckoutSummary({ cart, shippingFee }: CheckoutSummaryPr
       }
 
       const data = await res.json();
+      console.log("✅ [Voucher] Kết quả backend:", data);
       const amount = Number(data.discountAmount);
       if (!amount || amount <= 0) throw new Error("Voucher không hợp lệ");
 
-      setDiscount(amount * (subtotal < 1 ? 1 : subtotal)); // nếu percent backend đã chia /100
+      setDiscount(amount);
       setAppliedVoucher(voucherCode);
       alert("🎉 Mã giảm giá đã được áp dụng!");
     } catch (err: any) {
-      console.error("❌ Lỗi voucher:", err);
+      console.error("❌ [Voucher] Lỗi:", err);
       alert(err.message || "Mã giảm giá không hợp lệ!");
     }
   };
 
-  // 🛒 Đặt hàng
+  // 🛒 Xử lý đặt hàng
   const handlePlaceOrder = async () => {
     setPlacing(true);
+    console.group("🧾 [HANDLE PLACE ORDER LOG]");
     try {
       if (shippingFee === null) {
         alert("❌ Vui lòng chọn khu vực giao hàng hợp lệ trước khi đặt hàng!");
+        console.warn("⚠️ Chưa có shippingFee, dừng xử lý!");
         setPlacing(false);
         return;
       }
 
-      // ✅ Log dữ liệu trước khi gửi
-      console.group("🧾 [HANDLE PLACE ORDER LOG]");
-      console.log("📦 Cart gửi lên:", activeCart);
-      console.table(
-        activeCart.items.map((i) => ({
-          id: i.product?.id ?? i.id,
-          name: i.product?.name ?? "(Không có tên)",
-          quantity: i.quantity,
-          price: i.price,
-          total: Number(i.price) * i.quantity,
-        }))
-      );
-      console.groupEnd();
+      console.log("🧺 Cart (context):", contextCart);
+      console.log("🧺 Cart (local):", localCart);
+      console.log("🧺 Cart (active):", activeCart);
+
+      if (!activeCart?.items?.length) {
+        console.warn("⚠️ Không có sản phẩm trong giỏ hàng!");
+        setPlacing(false);
+        return;
+      }
 
       const payload = {
         customerId: activeCart.customerId || null,
         note: "Đặt hàng qua website",
         totalAmount: total,
-        shippingFee, // 🆕 lưu phí ship vào đơn hàng
+        shippingFee,
         items: activeCart.items.map((i) => ({
           productId: i.product.id,
           quantity: i.quantity,
@@ -109,22 +113,43 @@ export default function CheckoutSummary({ cart, shippingFee }: CheckoutSummaryPr
         })),
       };
 
+      console.log("🚀 [CheckoutSummary] Payload gửi lên:", payload);
+
       const res = await fetch(`${API_URL}/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
+      console.log("📩 [CheckoutSummary] Kết quả HTTP:", res.status);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = await res.json().catch(() => ({}));
+      console.log("✅ [CheckoutSummary] Phản hồi từ server:", data);
+
       alert("✅ Đặt hàng thành công!");
-      clearCart();
-      localStorage.removeItem("guestCart"); // ✅ Xóa cart local sau khi đặt hàng
+
+      // 🧹 Xoá giỏ hàng
+      console.group("🧹 [CLEAR CART LOG]");
+      console.log("📦 Trước khi clearCart(), contextCart:", contextCart);
+      clearCart(); // ✅ clear context
+      console.log("📦 Sau khi gọi clearCart()");
+      localStorage.removeItem("guestCart");
+      console.log("🗑️ Đã xóa guestCart khỏi localStorage");
+      console.groupEnd();
+
+      // ✅ Điều hướng
+      console.log("➡️ Điều hướng tới trang /thankyou ...");
       router.push("/thankyou");
+      await fetch(`${API_URL}/cart?customerId=${payload.customerId}`, { method: "GET" });
+
     } catch (err) {
-      console.error("❌ [CheckoutSummary] Lỗi đặt hàng:", err);
+      console.error("❌ [CheckoutSummary] Lỗi khi đặt hàng:", err);
       alert("Không thể đặt hàng, vui lòng thử lại!");
     } finally {
+      console.groupEnd();
       setPlacing(false);
+      console.log("🔎 [CheckoutSummary] Hoàn tất flow, placing = false");
     }
   };
 
@@ -134,7 +159,7 @@ export default function CheckoutSummary({ cart, shippingFee }: CheckoutSummaryPr
         Đơn hàng ({activeCart?.items?.length || 0} sản phẩm)
       </h3>
 
-      {/* Danh sách sản phẩm */}
+      {/* 🧾 Danh sách sản phẩm */}
       <div className="space-y-3 border-b pb-3">
         {activeCart?.items.map((item) => (
           <div key={item.id} className="flex justify-between items-center">
@@ -152,7 +177,6 @@ export default function CheckoutSummary({ cart, shippingFee }: CheckoutSummaryPr
                 </p>
               </div>
             </div>
-
             <p className="text-sm font-semibold text-gray-700">
               {(Number(item.price) * item.quantity).toLocaleString("vi-VN")}₫
             </p>
@@ -183,7 +207,7 @@ export default function CheckoutSummary({ cart, shippingFee }: CheckoutSummaryPr
         </button>
       </div>
 
-      {/* Tổng cộng */}
+      {/* 💰 Tổng cộng */}
       <div className="mt-3 space-y-1 text-sm">
         <div className="flex justify-between">
           <span>Tạm tính</span>
@@ -212,7 +236,7 @@ export default function CheckoutSummary({ cart, shippingFee }: CheckoutSummaryPr
         </div>
       </div>
 
-      {/* Nút hành động */}
+      {/* 🔘 Nút hành động */}
       <div className="flex justify-between mt-4">
         <button
           onClick={() => router.push("/cart")}

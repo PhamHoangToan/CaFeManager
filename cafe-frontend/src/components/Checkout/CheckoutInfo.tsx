@@ -9,13 +9,25 @@ interface Props {
   onProvinceChange?: (province: string) => void;
 }
 
+interface Address {
+  id?: number;
+  fullName: string;
+  phone: string;
+  addressLine: string;
+  province: string;
+  district: string;
+  ward: string;
+  note?: string;
+  isDefault?: boolean;
+}
+
 export default function CheckoutInfo({ onProvinceChange }: Props) {
   const [provinces, setProvinces] = useState<Province[]>([]);
   const [districts, setDistricts] = useState<string[]>([]);
   const [wards, setWards] = useState<string[]>([]);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<Address>({
     fullName: "",
     phone: "",
     addressLine: "",
@@ -25,25 +37,114 @@ export default function CheckoutInfo({ onProvinceChange }: Props) {
     note: "",
   });
 
+  // 🟢 Lấy danh sách tỉnh
   useEffect(() => {
+    console.log("🌏 [CheckoutInfo] Bắt đầu tải danh sách tỉnh...");
     fetchAllProvinces()
-      .then((data) => setProvinces(data))
-      .catch((err) => console.error("❌ Lỗi tải danh sách tỉnh:", err));
+      .then((data) => {
+        console.log("✅ [CheckoutInfo] Tải tỉnh thành thành công:", data.length, "tỉnh");
+        setProvinces(data);
+      })
+      .catch((err) => console.error("❌ [CheckoutInfo] Lỗi tải danh sách tỉnh:", err));
   }, []);
 
+  // 🟢 Nếu user đã đăng nhập → tự động load địa chỉ mặc định
+  useEffect(() => {
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    console.log("👤 [CheckoutInfo] User localStorage:", user);
+
+    if (!user?.id) {
+      console.warn("⚠️ [CheckoutInfo] Không tìm thấy user.id trong localStorage");
+      return;
+    }
+
+    const loadDefaultAddress = async () => {
+      try {
+        console.log("🚀 [CheckoutInfo] Gọi API lấy địa chỉ:", `${API_URL}/addresses/customer/${user.id}`);
+        const res = await axios.get(`${API_URL}/addresses/customer/${user.id}`);
+        console.log("📦 [CheckoutInfo] API Response:", res.data);
+
+        // Kiểm tra xem API trả về data đúng dạng hay không
+        if (!res.data) {
+          console.warn("⚠️ [CheckoutInfo] API không trả về dữ liệu");
+          return;
+        }
+
+        const addresses: Address[] = Array.isArray(res.data) ? res.data : res.data?.data || [];
+
+        console.log("📬 [CheckoutInfo] Tổng địa chỉ tìm thấy:", addresses.length);
+
+        if (addresses.length === 0) {
+          console.warn("⚠️ [CheckoutInfo] Người dùng chưa có địa chỉ nào trong DB");
+          return;
+        }
+
+        // Ưu tiên địa chỉ mặc định
+        const defaultAddr = addresses.find((a) => a.isDefault) || addresses[0];
+        console.log("🏠 [CheckoutInfo] Default address:", defaultAddr);
+
+        // Cập nhật form
+        setForm({
+          fullName: defaultAddr.fullName || "",
+          phone: defaultAddr.phone || "",
+          addressLine: defaultAddr.addressLine || "",
+          province: defaultAddr.province || "",
+          district: defaultAddr.district || "",
+          ward: defaultAddr.ward || "",
+          note: defaultAddr.note || "",
+        });
+
+        // 🔍 Tự động load danh sách quận/huyện và phường/xã
+        const selectedProvince = provinces.find(
+          (p) => p.province === defaultAddr.province
+        );
+        if (!selectedProvince) {
+          console.warn("⚠️ [CheckoutInfo] Không tìm thấy tỉnh trong danh sách:", defaultAddr.province);
+          return;
+        }
+
+        const dists = [
+          ...new Set(selectedProvince.wards.map((w) => w.name.split(",")[0])),
+        ];
+        setDistricts(dists);
+
+        const wardList = selectedProvince.wards
+          .filter((w) => w.name.includes(defaultAddr.district))
+          .map((w) => w.name);
+        setWards(wardList);
+
+        console.log("✅ [CheckoutInfo] Load địa chỉ thành công, form đã được điền");
+      } catch (err: any) {
+        console.error("❌ [CheckoutInfo] Lỗi khi load địa chỉ mặc định:", err.message || err);
+      }
+    };
+
+    if (provinces.length > 0) {
+      console.log("🌐 [CheckoutInfo] Provinces đã sẵn sàng, tiến hành load địa chỉ...");
+      loadDefaultAddress();
+    } else {
+      console.log("⏳ [CheckoutInfo] Chưa có provinces, chờ useEffect kế tiếp...");
+    }
+  }, [provinces]); // Chờ danh sách tỉnh load xong trước khi fill
+
   const handleProvince = (provinceName: string) => {
+    console.log("📍 [CheckoutInfo] Chọn tỉnh:", provinceName);
     setForm({ ...form, province: provinceName, district: "", ward: "" });
     onProvinceChange?.(provinceName);
+
     const selected = provinces.find((p) => p.province === provinceName);
     if (selected) {
       const dists = selected.wards.map((w) => w.name.split(",")[0]);
       setDistricts([...new Set(dists)]);
       setWards([]);
+      console.log("🏙️ [CheckoutInfo] Cập nhật danh sách quận/huyện:", dists.length);
     }
   };
 
   const handleDistrict = (districtName: string) => {
+    console.log("🏘️ [CheckoutInfo] Chọn quận:", districtName);
     setForm({ ...form, district: districtName, ward: "" });
+
     const selectedProvince = provinces.find(
       (p) => p.province === form.province
     );
@@ -52,9 +153,11 @@ export default function CheckoutInfo({ onProvinceChange }: Props) {
         .filter((w) => w.name.includes(districtName))
         .map((w) => w.name);
       setWards(wardList);
+      console.log("🏡 [CheckoutInfo] Cập nhật danh sách phường/xã:", wardList.length);
     }
   };
 
+  // 🧾 Validation
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
     if (!form.fullName.trim()) newErrors.fullName = "Vui lòng nhập họ và tên";
@@ -65,12 +168,13 @@ export default function CheckoutInfo({ onProvinceChange }: Props) {
     if (!form.district) newErrors.district = "Vui lòng chọn quận/huyện";
     if (!form.ward) newErrors.ward = "Vui lòng chọn phường/xã";
     setErrors(newErrors);
+    console.log("🧩 [CheckoutInfo] Kết quả validate:", newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // 🟢 Gọi validate trước khi cho phép tiếp tục (có thể truyền callback)
   const handleBlur = () => validateForm();
 
+  // 🖥️ Render UI
   return (
     <div className="space-y-3">
       <h2 className="text-lg font-semibold text-[#5C2C1C]">
@@ -131,7 +235,7 @@ export default function CheckoutInfo({ onProvinceChange }: Props) {
         )}
       </div>
 
-      {/* --- Tỉnh/Thành --- */}
+      {/* Tỉnh/Thành */}
       <div>
         <select
           className={`w-full border rounded-md p-2 ${
@@ -154,7 +258,7 @@ export default function CheckoutInfo({ onProvinceChange }: Props) {
         )}
       </div>
 
-      {/* --- Quận/Huyện --- */}
+      {/* Quận/Huyện */}
       <div>
         <select
           className={`w-full border rounded-md p-2 ${
@@ -175,7 +279,6 @@ export default function CheckoutInfo({ onProvinceChange }: Props) {
         )}
       </div>
 
-      
       {/* Ghi chú */}
       <textarea
         placeholder="Ghi chú (tùy chọn)"

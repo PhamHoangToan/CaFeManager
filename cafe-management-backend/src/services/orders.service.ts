@@ -21,7 +21,8 @@ export const orderService = {
     },
   }),
 
-  create: async (data: any) => {
+ create: async (data: any) => {
+  // 🧾 1️⃣ Tạo đơn hàng
   const order = await prisma.order.create({
     data: {
       tableId: data.tableId,
@@ -41,9 +42,29 @@ export const orderService = {
     include: { items: true },
   });
 
-  // 🎁 Tích điểm cho khách hàng
+  // 🧹 2️⃣ Dọn giỏ hàng cũ của user (nếu có)
+  // 🧹 2️⃣ Dọn giỏ hàng cũ của user (nếu có)
+if (data.customerId) {
+  const customerId = Number(data.customerId);
+  try {
+    console.log(`🧹 [OrderService] Dọn giỏ hàng (status='cart') cho customerId=${customerId}`);
+
+    await prisma.order.deleteMany({
+      where: {
+        customerId,
+        status: "cart"
+      },
+    });
+
+    console.log(`✅ [OrderService] Đã xoá toàn bộ giỏ hàng (status='cart') customerId=${customerId}`);
+  } catch (err) {
+    console.error("⚠️ [OrderService] Lỗi khi xoá giỏ hàng:", err);
+  }
+}
+
+  // 🎁 3️⃣ Cộng điểm thưởng cho khách hàng
   if (order.customerId) {
-    const pointRate = 0.05; // 5% tổng đơn hàng
+    const pointRate = 0.05;
     const earnedPoints = Math.floor(Number(order.totalAmount) * pointRate);
 
     await prisma.customer.update({
@@ -53,7 +74,7 @@ export const orderService = {
         pointLogs: {
           create: {
             orderId: order.id,
-            type: "earn", // ⚡ BẮT BUỘC CÓ TRƯỜNG NÀY
+            type: "earn",
             pointsEarned: earnedPoints,
             pointsUsed: 0,
           },
@@ -61,13 +82,12 @@ export const orderService = {
       },
     });
 
-    console.log(
-      `🎉 Cộng ${earnedPoints} điểm cho khách hàng ID=${order.customerId}`
-    );
+    console.log(`🎉 Cộng ${earnedPoints} điểm cho khách hàng ID=${order.customerId}`);
   }
 
   return order;
 },
+
 async update(id: number, data: any) {
     return prisma.order.update({
       where: { id },
