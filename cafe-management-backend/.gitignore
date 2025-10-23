@@ -1,0 +1,111 @@
+
+# ============================================
+#  Node.js & Dependency
+# ============================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ============================================
+#  Build / Dist / Cache
+# ============================================
+dist/
+build/
+.next/
+out/
+coverage/
+.cache/
+.tmp/
+temp/
+.expo/
+.expo-shared/
+android/app/build/
+ios/Pods/
+ios/build/
+ios/DerivedData/
+
+# ============================================
+#  Environment / Secrets
+# ============================================
+.env
+.env.*.local
+.env.local
+.env.production
+.env.development
+.env.staging
+*.env.backup
+.envrc
+
+# ============================================
+#  Logs / Debug
+# ============================================
+*.log
+logs/
+*.pid
+*.seed
+*.pid.lock
+
+# ============================================
+#  OS / Editor / Tooling
+# ============================================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ============================================
+#  Prisma / Database / Backup
+# ============================================
+prisma/dev.db
+prisma/migrations/
+*.sqlite
+*.db
+*.db-journal
+dump.sql
+*.sql.bak
+
+# ============================================
+#  Uploads / Generated Files
+# ============================================
+uploads/
+public/uploads/
+public/temp/
+storage/
+tmp/
+*.zip
+*.tar.gz
+
+# ============================================
+#  Expo / React Native Extras
+# ============================================
+*.keystore
+*.jks
+*.p12
+*.key
+*.mobileprovision
+*.ipa
+*.apk
+*.aab
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+
+# ============================================
+#  Local Configs / Misc
+# ============================================
+firebase-debug.log
+google-services.json
+GoogleService-Info.plist
+android/local.properties
+xcuserdata/
+*.iml
+
+/generated/prisma

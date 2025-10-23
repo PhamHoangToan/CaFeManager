@@ -1,0 +1,11 @@
+{
+  "name": "Coffee Loyalty & Ordering",
+  "short_name": "CoffeeApp",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#5C2C1C",
+  "theme_color": "#5C2C1C",
+  "icons": [
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

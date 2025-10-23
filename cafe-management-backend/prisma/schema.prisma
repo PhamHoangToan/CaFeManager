@@ -1,0 +1,269 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Role {
+  id          Int              @id @default(autoincrement())
+  name        String
+  description String?
+  users       User[]
+  permissions RolePermission[]
+}
+
+model User {
+  id             Int             @id @default(autoincrement())
+  username       String          @unique
+  passwordHash   String
+  fullName       String?
+  phone          String?
+  email          String?
+  roleId         Int?
+  status         String          @default("active")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  role           Role?           @relation(fields: [roleId], references: [id])
+  orders         Order[]
+  importReceipts ImportReceipt[]
+}
+
+model Permission {
+  id          Int              @id @default(autoincrement())
+  code        String           @unique
+  description String?
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  roleId       Int
+  permissionId Int
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+}
+
+model Customer {
+  id        Int                     @id @default(autoincrement())
+  fullName  String?
+  phone     String?                 @unique
+  email     String?                 @unique
+  passwordHash String?
+  points    Int                     @default(0)
+  createdAt DateTime                @default(now())
+  orders    Order[]
+   carts     Cart[]
+     addresses Address[]
+
+   facebookId String? @unique
+  token    String?
+  pointLogs CustomerPointsHistory[]
+}
+
+model CustomerPointsHistory {
+  id           Int      @id @default(autoincrement())
+  customerId   Int
+  orderId      Int?
+  type        String
+  pointsEarned Int      @default(0)
+  pointsUsed   Int      @default(0)
+  createdAt    DateTime @default(now())
+  customer     Customer @relation(fields: [customerId], references: [id])
+  order        Order?   @relation(fields: [orderId], references: [id])
+}
+
+model Category {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String?
+  icon        String?
+  products    Product[]
+}
+
+model Product {
+  id          Int          @id @default(autoincrement())
+  categoryId  Int?
+  name        String
+  description String?      // 🆕 Mô tả sản phẩm
+  price       Decimal      @db.Decimal(10, 2)
+  imageUrl    String?
+  status      String       @default("available")
+
+  // 🆕 Một sản phẩm có nhiều size
+  sizes       ProductSize[]
+  cartItems CartItem[] // 🆕 Sản phẩm xuất hiện trong nhiều giỏ hàng
+
+  category    Category?    @relation(fields: [categoryId], references: [id])
+  orderItems  OrderItem[]
+}
+
+model ProductSize {
+  id         Int      @id @default(autoincrement())
+  productId  Int
+  name       String    // Ví dụ: "Nhỏ", "Vừa", "Lớn"
+  price      Decimal   @db.Decimal(10, 2)
+  
+  product    Product   @relation(fields: [productId], references: [id])
+    cartItems CartItem[] // 🆕 Size có thể nằm trong nhiều cart item
+
+  @@unique([productId, name]) // mỗi size 1 lần duy nhất cho sản phẩm
+}
+
+model Table {
+  id     Int     @id @default(autoincrement())
+  name   String
+  area   String?
+  status String  @default("empty")
+  orders Order[]
+}
+
+model Kiosk {
+  id        Int      @id @default(autoincrement())
+  name      String?
+  location  String?
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  orders    Order[]
+}
+
+model Order {
+  id                    Int                     @id @default(autoincrement())
+  tableId               Int?
+  kioskId               Int?
+  customerId            Int?
+  cartKey               String?                 @unique
+  userId                Int?
+  orderTime             DateTime                @default(now())
+  status                String                  @default("ordering")
+  note                  String?
+  totalAmount           Decimal                 @default(0) @db.Decimal(10, 2)
+  table                 Table?                  @relation(fields: [tableId], references: [id])
+  kiosk                 Kiosk?                  @relation(fields: [kioskId], references: [id])
+  customer              Customer?               @relation(fields: [customerId], references: [id])
+  user                  User?                   @relation(fields: [userId], references: [id])
+  items                 OrderItem[]
+  shippingStatus        String?
+  trackingCode          String?      // 🆕 Thêm dòng này để lưu mã vận đơn GHN
+  payments              Payment[]
+  vouchers              OrderVoucher[]
+  CustomerPointsHistory CustomerPointsHistory[]
+}
+
+model OrderItem {
+  id        Int     @id @default(autoincrement())
+  orderId   Int
+  productId Int
+  quantity  Int     @default(1)
+  price     Decimal @db.Decimal(10, 2)
+  order     Order   @relation(fields: [orderId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model Payment {
+  id          Int      @id @default(autoincrement())
+  orderId     Int
+  paymentTime DateTime @default(now())
+  method      String   @default("cash")
+  status    String   @default("pending")
+  amount      Decimal  @db.Decimal(10, 2)
+  order       Order    @relation(fields: [orderId], references: [id])
+}
+
+model Voucher {
+  id            Int            @id @default(autoincrement())
+  code          String         @unique
+  description   String?
+  discountType  String         @default("percent")
+  discountValue Decimal        @db.Decimal(10, 2)
+  minOrderValue Decimal?       @db.Decimal(10, 2)
+  startDate     DateTime?
+  endDate       DateTime?
+  imageUrl      String?
+  usageLimit    Int?           @default(1)
+  usedCount     Int?           @default(0)
+  status        String         @default("active")
+  orders        OrderVoucher[]
+}
+
+model OrderVoucher {
+  id             Int     @id @default(autoincrement())
+  orderId        Int
+  voucherId      Int
+  discountAmount Decimal @db.Decimal(10, 2)
+  order          Order   @relation(fields: [orderId], references: [id])
+  voucher        Voucher @relation(fields: [voucherId], references: [id])
+}
+
+model Material {
+  id           Int          @id @default(autoincrement())
+  name         String
+  unit         String?
+  quantity     Decimal      @default(0) @db.Decimal(10, 2)
+  minQuantity  Decimal      @default(0) @db.Decimal(10, 2)
+  pricePerUnit Decimal?     @db.Decimal(10, 2)
+  updatedAt    DateTime     @updatedAt
+  importItems  ImportItem[]
+}
+
+model ImportReceipt {
+  id        Int          @id @default(autoincrement())
+  userId    Int
+  supplier  String?
+  createdAt DateTime     @default(now())
+  note      String?
+  user      User         @relation(fields: [userId], references: [id])
+  items     ImportItem[]
+}
+
+model ImportItem {
+  id         Int           @id @default(autoincrement())
+  receiptId  Int
+  materialId Int
+  quantity   Decimal       @db.Decimal(10, 2)
+  price      Decimal       @db.Decimal(10, 2)
+  receipt    ImportReceipt @relation(fields: [receiptId], references: [id])
+  material   Material      @relation(fields: [materialId], references: [id])
+}
+model Cart {
+  id         Int         @id @default(autoincrement())
+  customerId Int?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  customer   Customer?   @relation(fields: [customerId], references: [id])
+  items      CartItem[]
+}
+
+model CartItem {
+  id        Int       @id @default(autoincrement())
+  cartId    Int
+  productId Int
+  sizeId    Int?
+  quantity  Int       @default(1)
+  price     Decimal   @db.Decimal(10, 2)
+  cart      Cart      @relation(fields: [cartId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id])
+  size      ProductSize? @relation(fields: [sizeId], references: [id])
+}
+model Address {
+  id          Int      @id @default(autoincrement())
+  customerId  Int
+  fullName    String
+  phone       String
+  company     String?
+  province    String
+  district    String
+  ward        String
+  addressLine String
+  zipCode     String?
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id])
+}
+
+
